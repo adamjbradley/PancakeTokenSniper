@@ -33,5 +33,9 @@ namespace BscTokenSniper.Models
         public int BuyDelaySeconds { get; set; }
         public bool CheckRouterAddressInContract { get; set; }
         public bool OnlyBuyWhitelist { get; set; }
+        public bool CheckContractVerified { get; set; }
+        public bool SafuCheckEnabled { get; set; }
+        public string SafuApikey { get; set; }
+        public float SafuTotalScore { get; set; }
     }
 }

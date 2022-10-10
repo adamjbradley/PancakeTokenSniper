@@ -35,6 +35,7 @@ namespace BscTokenSniper
             services.AddSingleton<RugHandler>();
             services.Configure<SniperConfiguration>(config.GetSection("SniperConfiguration"));
             services.AddHostedService<SniperService>();
+            //services.AddScoped<IImplementation, NewImplementation>();
         });
 
     }
