@@ -8,6 +8,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 
+using Microsoft.EntityFrameworkCore;
+using Npgsql.EntityFrameworkCore.PostgreSQL;
+using System.Configuration;
+
 namespace BscTokenSniper
 {
     public static class Program
@@ -21,7 +25,7 @@ namespace BscTokenSniper
         .ConfigureServices((hostContext, services) =>
         {
             var config = hostContext.Configuration;
-
+            
             var loggerConfig = new LoggerConfiguration()
                   .ReadFrom.Configuration(config);
 
@@ -36,6 +40,9 @@ namespace BscTokenSniper
             services.Configure<SniperConfiguration>(config.GetSection("SniperConfiguration"));
             services.AddHostedService<SniperService>();
             //services.AddScoped<IImplementation, NewImplementation>();
+
+            // From https://learn.microsoft.com/en-us/ef/core/get-started/overview/first-app?tabs=netcore-cli
+            services.AddDbContext<PersistenceContext>(options => options.UseNpgsql("Host=192.168.1.120;Database=iiprod_db;Username=postgres;Password=postgres"));            
         });
 
     }

@@ -35,6 +35,7 @@ namespace BscTokenSniper
         private readonly RugHandler _rugChecker;
         private readonly TradeHandler _tradeHandler;
         private readonly CancellationTokenSource _processingCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        private CoinAndLiquidityHandler _coinAndLiquidityHandler = new CoinAndLiquidityHandler();
 
         public SniperService(IOptions<SniperConfiguration> options, RugHandler rugChecker, TradeHandler tradeHandler)
         {
@@ -107,6 +108,9 @@ namespace BscTokenSniper
                 Token1 = addLiquidityEvent.Token
             };
 
+            var symbol = await _rugChecker.GetSymbol(newPair);
+            newPair.Symbol = symbol;
+                        
             await PairCreated(newPair);
         }
 
@@ -166,8 +170,10 @@ namespace BscTokenSniper
         
             var symbol = await _rugChecker.GetSymbol(pair);
             pair.Symbol = symbol;
-
+            
             Log.Logger.Warning("PairCreated event. Processing Symbol: {0} Address: {1} Token1: {2} Token0: {3}", symbol, otherPairAddress, pair.Token1, pair.Token0);
+
+            #region Perform safety checks
 
             var addressWhitelisted = _sniperConfig.WhitelistedTokens.Any(t => t.Equals(otherPairAddress));
             if(_sniperConfig.OnlyBuyWhitelist && !addressWhitelisted)
@@ -176,35 +182,52 @@ namespace BscTokenSniper
                 return;
             }        
 
-            var rugCheckPassed = _sniperConfig.RugCheckEnabled && !addressWhitelisted ? await _rugChecker.CheckRugAsync(pair) : true;
             var otherTokenIdx = pair.Token0.Equals(_sniperConfig.LiquidityPairAddress, StringComparison.InvariantCultureIgnoreCase) ? 1 : 0;
+            
+            var rugCheckPassed = _sniperConfig.RugCheckEnabled && !addressWhitelisted ? await _rugChecker.CheckRugAsync(pair) : true;            
             var honeypotCheck = !addressWhitelisted && _sniperConfig.HoneypotCheck;
+                        
+            #endregion
 
-            Log.Logger.Information("PairCreated: Discovered Token Pair: {0} Rug check Result: {1} Contract address: {2}", symbol, rugCheckPassed, otherPairAddress);
-
-            //AJB                        
+            #region Save TokenPair  
             //TODO
+            //AJB
+            // Wrapped BNB Binance Token Contract is here https://bscscan.com/address/0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c#tokentxns            
+
+            // Add Token Pair
+            TokenPair tp = _coinAndLiquidityHandler.GetTokenPairs(otherPairAddress);
+            if (tp == null) {
+                tp = _coinAndLiquidityHandler.AddTokenPair(otherPairAddress, symbol, pair.Token0, pair.Token1);                
+            }                    
+            _coinAndLiquidityHandler.AddLiquidityEvent(pair.Amount.ToString(), otherPairAddress, pair.Token0, pair.Token1);
+            //_coinAndLiquidityHandler.AddTokenEvent
+                                  
             TokensOwned token = _tradeHandler.GetToken(otherPairAddress);
             if (token == null)
             {
                 _tradeHandler.SaveTokens(otherPairAddress, otherTokenIdx, pair.Pair, symbol, "TokenAdded", "New Token/Pair added");
-                Log.Logger.Information("PairCreated: Discovered new Token Pair: {0} Contract address: {1}", symbol, otherPairAddress);
-                
+                Log.Logger.Information("PairCreated: Discovered new Token Pair: {0} Contract address: {1}", symbol, otherPairAddress);                
             }
             else {
                 Log.Logger.Information("PairCreated: Token Pair exists {0} Contract address: {1}", symbol, otherPairAddress);
             }
+            #endregion
 
-
+            #region Rug check
             if (!rugCheckPassed)
             {
                 Log.Logger.Warning("PairCreated: Rug Check failed for {0}", symbol);
 
                 //AJB
-                _tradeHandler.SaveRejectedTokens(otherPairAddress, otherTokenIdx, pair.Pair, symbol, "RugCheck", "Rug check failed", honeypotCheck);
+                if (!_tradeHandler.IsRejectedToken(otherPairAddress))
+                    _tradeHandler.SaveRejectedTokens(otherPairAddress, otherTokenIdx, pair.Pair, symbol, "Rugcheck", "Rug check failed", honeypotCheck);
+                
                 return;
             }
+            Log.Logger.Information("PairCreated: Discovered Token Pair: {0} Rug check Result: {1} Contract address: {2}", symbol, rugCheckPassed, otherPairAddress);
+            #endregion
 
+            #region Honeypot check
             Log.Logger.Information("PairCreated: Starting Honeypot check for {0} with amount {1}", symbol, _sniperConfig.HoneypotCheckAmount);
             if (!honeypotCheck)
             {
@@ -220,14 +243,17 @@ namespace BscTokenSniper
                 await _tradeHandler.Buy(otherPairAddress, otherTokenIdx, pair.Pair, _sniperConfig.AmountToSnipe, symbol, "Buy", "Buying Token Pair: " + symbol);
                 return;
             }
+            #endregion
 
+            #region Buy and sell check
             var buySuccess = await _tradeHandler.Buy(otherPairAddress, otherTokenIdx, pair.Pair, _sniperConfig.HoneypotCheckAmount, symbol, "Buy", "Honeypot check", true);
             if (!buySuccess)
             {
                 Log.Logger.Fatal("PairCreated: Honeypot check failed could not buy token: {0}", pair.Symbol);
 
                 //AJB
-                _tradeHandler.SaveRejectedTokens(otherPairAddress, otherTokenIdx, pair.Pair, symbol, "HoneypotCheckFailed", "Honeypot check failed for token " + pair.Symbol);
+                if (!_tradeHandler.IsRejectedToken(otherPairAddress))
+                    _tradeHandler.SaveRejectedTokens(otherPairAddress, otherTokenIdx, pair.Pair, symbol, "HoneypotCheckFailed", "Honeypot check failed could not buy token " + pair.Symbol);
 
                 return;
             }
@@ -247,20 +273,28 @@ namespace BscTokenSniper
             if (!sellSuccess)
             {
                 Log.Logger.Fatal("PairCreated: Honeypot check DETECTED HONEYPOT could not sell token: {0}", pair.Symbol);
+                
+                //AJB
+                if (!_tradeHandler.IsRejectedToken(otherPairAddress))
+                    _tradeHandler.SaveRejectedTokens(otherPairAddress, otherTokenIdx, pair.Pair, symbol, "HoneypotCheckFailed", "Honeypot check could not sell token " + pair.Symbol);
+
                 return;
             }
 
             Log.Logger.Information("PairCreated: Honeypot check PASSED buying token: {0}", pair.Symbol);
+            #endregion
 
+            #region If successful, remove from Reject Token list
             //Remove from Reject Token collection
             if (_tradeHandler.IsRejectedToken(otherPairAddress))
             {
                 _tradeHandler.RemoveRejectedTokenFromList(otherPairAddress);
-                Log.Logger.Warning("PairCreated: PairCreated event. We've removed this coin from the rejected list {0}", otherPairAddress);
-                return;
-            }         
+            }       
+            #endregion
 
+            #region Buy  
             await _tradeHandler.Buy(otherPairAddress, otherTokenIdx, pair.Pair, _sniperConfig.AmountToSnipe, symbol, "HoneypotCheckPassed", "Honeypot check passed for token " + pair.Symbol);
+            #endregion
         }
 
         public Task StopAsync(CancellationToken cancellationToken)

@@ -147,7 +147,6 @@ namespace BscTokenSniper.Handlers
                 return null;
         }
 
-
         public TokensOwned GetOwnedTokens(string tokenAddress)
         {
             TokensOwned value;
@@ -181,6 +180,8 @@ namespace BscTokenSniper.Handlers
 
         public bool RemoveRejectedTokenFromList(string tokenAddress)
         {
+            Log.Logger.Warning("TradeHandler: RemoveRejectedTokenFromList removing this coin from the rejected list {0}", tokenAddress);
+
             TokensOwned value;
             if (this._rejectedTokenList.TryRemove(tokenAddress, out value)) 
             {
