@@ -3,6 +3,7 @@ using System;
 using BscTokenSniper.Handlers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,10 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace BscTokenSniper.Migrations
 {
     [DbContext(typeof(PersistenceContext))]
-    partial class PersistenceContextModelSnapshot : ModelSnapshot
+    [Migration("20221011110856_MoreTokenStateInfo5")]
+    partial class MoreTokenStateInfo5
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -33,9 +35,6 @@ namespace BscTokenSniper.Migrations
                     b.Property<string>("Amount")
                         .HasColumnType("text");
 
-                    b.Property<string>("EventId")
-                        .HasColumnType("text");
-
                     b.Property<string>("PairAddress")
                         .HasColumnType("text");
 
@@ -52,10 +51,6 @@ namespace BscTokenSniper.Migrations
                         .HasColumnType("integer");
 
                     b.HasKey("LiquidityEventId");
-
-                    b.HasIndex("EventId");
-
-                    b.HasIndex("PairAddress");
 
                     b.HasIndex("TokenPairId");
 
@@ -80,9 +75,6 @@ namespace BscTokenSniper.Migrations
                         .HasColumnType("bigint");
 
                     b.Property<string>("Description")
-                        .HasColumnType("text");
-
-                    b.Property<string>("EventId")
                         .HasColumnType("text");
 
                     b.Property<string>("EventResult")
@@ -112,8 +104,6 @@ namespace BscTokenSniper.Migrations
                     b.HasKey("TokenEventId");
 
                     b.HasIndex("Address");
-
-                    b.HasIndex("EventId");
 
                     b.HasIndex("TokenPairId");
 
@@ -167,9 +157,6 @@ namespace BscTokenSniper.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("TokenPairValueId"));
 
-                    b.Property<string>("Address")
-                        .HasColumnType("text");
-
                     b.Property<long>("FiftyTwoWeekHigh")
                         .HasColumnType("bigint");
 
@@ -192,8 +179,6 @@ namespace BscTokenSniper.Migrations
                         .HasColumnType("bigint");
 
                     b.HasKey("TokenPairValueId");
-
-                    b.HasIndex("Address");
 
                     b.HasIndex("TokenPairId");
 

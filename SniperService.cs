@@ -181,17 +181,10 @@ namespace BscTokenSniper
                 Log.Logger.Warning("PairCreated: Address is not in the whitelist blocked {0}", otherPairAddress);
                 return;
             }        
-
-            var otherTokenIdx = pair.Token0.Equals(_sniperConfig.LiquidityPairAddress, StringComparison.InvariantCultureIgnoreCase) ? 1 : 0;
-            
-            var rugCheckPassed = _sniperConfig.RugCheckEnabled && !addressWhitelisted ? await _rugChecker.CheckRugAsync(pair) : true;            
-            var honeypotCheck = !addressWhitelisted && _sniperConfig.HoneypotCheck;
                         
             #endregion
 
             #region Save TokenPair  
-            //TODO
-            //AJB
             // Wrapped BNB Binance Token Contract is here https://bscscan.com/address/0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c#tokentxns            
 
             // Add Token Pair
@@ -200,8 +193,29 @@ namespace BscTokenSniper
                 tp = _coinAndLiquidityHandler.AddTokenPair(otherPairAddress, symbol, pair.Token0, pair.Token1);                
             }                    
             _coinAndLiquidityHandler.AddLiquidityEvent(pair.Amount.ToString(), otherPairAddress, pair.Token0, pair.Token1);
-            //_coinAndLiquidityHandler.AddTokenEvent
-                                  
+            
+            // Add RugCheck event details
+            var otherTokenIdx = pair.Token0.Equals(_sniperConfig.LiquidityPairAddress, StringComparison.InvariantCultureIgnoreCase) ? 1 : 0;            
+            var rugChecks = await _rugChecker.CheckRugAsync(pair);
+            bool success = true;
+            //TODO
+            //AJB
+            // Threading is cause us grief! We're adding multiple and never resetting this! Think this one through more
+
+            /*foreach (RugCheckResult result in rugChecks.ToList<RugCheckResult>()) {                
+                tp.TokenPairEvents.Add(new TokenEvent(result.Address, result.Event, result.EventResult, result.Detail, false, symbol));
+                if (result.Success == false) {                    
+                    success = false;            
+                }                            
+            }
+            _coinAndLiquidityHandler.UpdateTokenPair(otherPairAddress, tp);
+            */
+
+
+            var rugCheckPassed = _sniperConfig.RugCheckEnabled && !addressWhitelisted ? success : true;
+            var honeypotCheck = !addressWhitelisted && _sniperConfig.HoneypotCheck;
+
+                                              
             TokensOwned token = _tradeHandler.GetToken(otherPairAddress);
             if (token == null)
             {
@@ -221,7 +235,11 @@ namespace BscTokenSniper
                 //AJB
                 if (!_tradeHandler.IsRejectedToken(otherPairAddress))
                     _tradeHandler.SaveRejectedTokens(otherPairAddress, otherTokenIdx, pair.Pair, symbol, "Rugcheck", "Rug check failed", honeypotCheck);
-                
+
+                    tp.State = "REJECTED";                    
+                    tp.TokenPairEvents.Add(new TokenEvent(otherPairAddress, "RUG_CHECK", "FAILED", "Rug check failed", false, symbol));
+                    _coinAndLiquidityHandler.UpdateTokenPair(otherPairAddress, tp);
+
                 return;
             }
             Log.Logger.Information("PairCreated: Discovered Token Pair: {0} Rug check Result: {1} Contract address: {2}", symbol, rugCheckPassed, otherPairAddress);
@@ -253,7 +271,11 @@ namespace BscTokenSniper
 
                 //AJB
                 if (!_tradeHandler.IsRejectedToken(otherPairAddress))
-                    _tradeHandler.SaveRejectedTokens(otherPairAddress, otherTokenIdx, pair.Pair, symbol, "HoneypotCheckFailed", "Honeypot check failed could not buy token " + pair.Symbol);
+                    _tradeHandler.SaveRejectedTokens(otherPairAddress, otherTokenIdx, pair.Pair, pair.Symbol, "HoneypotCheckFailed", "Honeypot check failed could not buy token " + pair.Symbol);
+
+                tp.State = "REJECTED";
+                tp.TokenPairEvents.Add(new TokenEvent(otherPairAddress, "HONEYPOT_CHECK", "FAILED", "Honeypot check DETECTED HONEYPOT could not sell token", false, pair.Symbol));
+                _coinAndLiquidityHandler.UpdateTokenPair(otherPairAddress, tp);
 
                 return;
             }
@@ -278,6 +300,10 @@ namespace BscTokenSniper
                 if (!_tradeHandler.IsRejectedToken(otherPairAddress))
                     _tradeHandler.SaveRejectedTokens(otherPairAddress, otherTokenIdx, pair.Pair, symbol, "HoneypotCheckFailed", "Honeypot check could not sell token " + pair.Symbol);
 
+                tp.State = "REJECTED";
+                tp.TokenPairEvents.Add(new TokenEvent(otherPairAddress, "HONEYPOT_CHECK", "FAILED", "Honeypot check DETECTED HONEYPOT could not sell token", false, symbol));
+                _coinAndLiquidityHandler.UpdateTokenPair(otherPairAddress, tp);
+
                 return;
             }
 
@@ -289,11 +315,22 @@ namespace BscTokenSniper
             if (_tradeHandler.IsRejectedToken(otherPairAddress))
             {
                 _tradeHandler.RemoveRejectedTokenFromList(otherPairAddress);
-            }       
+            } 
             #endregion
 
             #region Buy  
+
+            tp.State = "BUYING";
+            tp.TokenPairEvents.Add(new TokenEvent(otherPairAddress, "BUY", "PENDING", "Passed checks, buying ", true, pair.Symbol));
+            _coinAndLiquidityHandler.UpdateTokenPair(otherPairAddress, tp);
+
             await _tradeHandler.Buy(otherPairAddress, otherTokenIdx, pair.Pair, _sniperConfig.AmountToSnipe, symbol, "HoneypotCheckPassed", "Honeypot check passed for token " + pair.Symbol);
+            
+            tp.State = "BUY COMPLETED";
+            tp.Owned = true;
+            tp.TokenPairEvents.Add(new TokenEvent(otherPairAddress, "BUY", "PENDING", "Passed checks, buying " + pair.Symbol, true, pair.Symbol));
+            _coinAndLiquidityHandler.UpdateTokenPair(otherPairAddress, tp);
+
             #endregion
         }
 

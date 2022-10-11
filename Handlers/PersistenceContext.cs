@@ -53,11 +53,14 @@ namespace BscTokenSniper.Handlers
         public List<TokenEvent> TokenPairEvents { get; } = new();        
     }
 
+    [Index(nameof(PairAddress)), Index(nameof(EventId))]
     public class LiquidityEvent
     {
         public int LiquidityEventId { get; set; }
 
         public DateTime Timestamp { get; set;}
+
+        public string EventId { get; set; }
         
         public string Amount {get; set;}
         public string PairAddress {get; set;}
@@ -71,33 +74,54 @@ namespace BscTokenSniper.Handlers
             this.PairAddress = pairAddress;
             this.Token0 = token0;
             this.Token1 = token1;
+            this.EventId = Guid.NewGuid().ToString();
             this.Timestamp = DateTime.UtcNow;
+            this.EventId = Guid.NewGuid().ToString();
         }
 
         public int TokenPairId { get; set; }
         public TokenPair TokenPair { get; set; }
     }
+    
+    [Index(nameof(Address))]
     public class TokenPairValue
     {        
         public int TokenPairValueId { get; set; }
 
         public DateTime Timestamp { get; set;}
-        public int Value { get; set; }
         
+        public long Value { get; set; }
+
+        public string Address { get; set; }
+
+        public long High { get; set; }
+        public long Low { get; set; }        
+
+        public long FiftyTwoWeekHigh { get; set; }        
+
+        public long FiftyTwoWeekLow { get; set; }        
         public int TokenPairId { get; set; }
         public TokenPair TokenPair { get; set; }
     }
 
-    [Index(nameof(Address))]
+    [Index(nameof(Address)), Index(nameof(EventId))]
     public class TokenEvent
     {
         public int TokenEventId { get; set; }
         public DateTime Timestamp { get; set;}
 
+        public string EventId { get; set; }
+
         public string Address { get; set; }
         public string Description {get; set; }
 
-        public string EventType {get; set; }        
+        public string EventType {get; set; }
+
+        public string EventResult {get; set; }
+
+        public bool Success {get; set;}
+
+        public string Symbol {get; set;}
 
         public long BuyValue { get; set; }
 
@@ -106,23 +130,28 @@ namespace BscTokenSniper.Handlers
         public string Wallet { get; set; }        
         public string WalletAddress { get; set; }        
 
-        public TokenEvent(string address, string eventType, string description) {
+        public TokenEvent(string address, string eventType, string eventResult, string description, bool success, string symbol) {
             this.Address = address;   
             this.EventType = eventType;
-            this.Description = description;            
-            this.Timestamp = DateTime.UtcNow;
+            this.EventResult = eventResult;
+            this.Description = description;    
+            this.Success = success;
+            this.Symbol = symbol;        
+            this.Timestamp = DateTime.UtcNow;            
+            this.EventId = Guid.NewGuid().ToString();
         }
 
-        public TokenEvent(string address, string eventType, string description, long buyValue, long buyQuantity, string wallet = "default", string walletAddress = "default") {
+        public TokenEvent(string address, string eventType, string eventResult, string description, long buyValue, long buyQuantity, string wallet = "default", string walletAddress = "default") {
             this.Address = address;   
             this.EventType = eventType;
+            this.EventResult = eventResult;
             this.Description = description;  
             this.BuyValue = buyValue;
             this.BuyQuantity = buyQuantity;
             this.Wallet = wallet;
             this.WalletAddress = walletAddress;
-            this.Timestamp = DateTime.UtcNow;
-            
+            this.Timestamp = DateTime.UtcNow;            
+            this.EventId = Guid.NewGuid().ToString();
         }
     
         public int TokenPairId { get; set; }

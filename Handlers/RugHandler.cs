@@ -27,6 +27,7 @@ namespace BscTokenSniper.Handlers
         private readonly string _pairContractStr;
         private ConcurrentBag<SmartContract> _smartContractList = new ConcurrentBag<SmartContract>();
         private readonly string SafuCheckUrl = "https://app.staysafu.org/api/scan?tokenAddress={0}&key={1}&holdersAnalysis={2}&chain=bsc";
+        private List<RugCheckResult> results = new List<RugCheckResult>();
 
         public RugHandler(IOptions<SniperConfiguration> sniperConfig, IHttpClientFactory httpClientFactory)
         {
@@ -43,6 +44,9 @@ namespace BscTokenSniper.Handlers
         {
             if(!_sniperConfig.RugdocCheckEnabled)
             {
+                
+                //return new RugCheckResult("RUGDOC_CHECK", "NOT_ENABLED", "Not enabled", null, otherPairAddress, true);
+                results.Add(new RugCheckResult("RUGDOC_CHECK", "NOT_ENABLED", "Not enabled", null, otherPairAddress, true));
                 return true;
             }
 
@@ -73,7 +77,9 @@ namespace BscTokenSniper.Handlers
                 }                
                 _smartContractList.Add(sc);
                 SmartContractOperations.SaveContracts(_smartContractList);        
-
+                
+                results.Add(new RugCheckResult("RUGDOC_CHECK_CONTRACT_STATUS", null, sc.Status, null, otherPairAddress, sc.Ok));
+                //return new RugCheckResult("RUGDOC_CHECK_CONTRACT_STATUS", null, sc.Status, null, otherPairAddress, sc.Ok);
                 return valid;
             }
             catch (Exception e)
@@ -84,16 +90,22 @@ namespace BscTokenSniper.Handlers
                 sc.Status = "Bsc contract is not ok! Failed RugdocCheck - " + fullRugdocStr;
                 _smartContractList.Add(sc);
                 SmartContractOperations.SaveContracts(_smartContractList);        
-
+                
+                results.Add(new RugCheckResult("RUGDOC_CHECK", "", sc.Status, null, otherPairAddress, sc.Ok));
                 return false;
+                
+                //return new RugCheckResult("RUGDOC_CHECK", "", sc.Status, null, otherPairAddress, sc.Ok);
             }
         }
 
         public async Task<bool> SafuCheck(string otherPairAddress)
         {
+            
             if(!_sniperConfig.SafuCheckEnabled)
             {
                 return true;
+                results.Add(new RugCheckResult("SAFU_CHECK", "NOT_ENABLED", "Not enabled", null, otherPairAddress, true));
+                //return new RugCheckResult("SAFU_CHECK", "NOT_ENABLED", "Not enabled", null, otherPairAddress, true);
             }
             
             var result = await _httpClient.GetAsync(string.Format(GetSourceUrl, otherPairAddress, _sniperConfig.BscScanApikey));
@@ -156,7 +168,7 @@ namespace BscTokenSniper.Handlers
 
                 if (float.Parse(responseObject["result"]["totalScore"].Value<string>()) < _sniperConfig.SafuTotalScore)
                 {
-                    valid = false;
+                    valid = false;                    
                 }
 
                 if (valid) {
@@ -172,18 +184,23 @@ namespace BscTokenSniper.Handlers
                 SmartContractOperations.SaveContracts(_smartContractList);
 
                 Serilog.Log.Logger.Information("SafuCheck: SafuCheck token {0} Status: {1} Response: {2}", otherPairAddress, valid, fullSafuStr);
+
+                results.Add(new RugCheckResult("SAFU_CHECK", "", sc.Status, null, otherPairAddress, sc.Ok));
                 return valid;
+                //return new RugCheckResult("SAFU_CHECK", "", sc.Status, null, otherPairAddress, sc.Ok);
             }
             catch (Exception e)
             {
                 Serilog.Log.Logger.Error("SafuCheck: {0}: SafuCheck token {1} Response: {2} Error {3}", nameof(SafuCheck), otherPairAddress, fullSafuStr, e.ToString());                                        
                 sc.Ok = false;
                 sc.Status = "Bsc contract is not ok! Failed SafuCheck - " + nameof(SafuCheck) + ": SafuCheck Token: " +  otherPairAddress + " Response: " + fullSafuStr + " Error: " + e.ToString();
-                _smartContractList.Add(sc);
-                //_smartContractList.Append<SmartContract>(sc);
+                
+                _smartContractList.Add(sc);                
                 SmartContractOperations.SaveContracts(_smartContractList);        
 
+                results.Add(new RugCheckResult("SAFU_CHECK", "EXCEPTION", e.ToString(), null, otherPairAddress, false));
                 return false;
+                //return new RugCheckResult("SAFU_CHECK", "EXCEPTION", e.ToString(), null, otherPairAddress, false);
             }
         }
 
@@ -194,12 +211,15 @@ namespace BscTokenSniper.Handlers
             return await _bscWeb3.Eth.GetContract(_erc20Abi, otherPairAddress).GetFunction("symbol").CallAsync<string>();
         }
 
-        public async Task<bool> CheckRugAsync(PairCreatedEvent pairCreatedEvent)
-        {
+        public async Task<List<RugCheckResult>> CheckRugAsync(PairCreatedEvent pairCreatedEvent)
+        {            
             if (pairCreatedEvent.Token0 != _sniperConfig.LiquidityPairAddress && pairCreatedEvent.Token1 != _sniperConfig.LiquidityPairAddress)
             {
                 Serilog.Log.Logger.Warning("CheckRugAsync: Target liquidity pair not found for pair: {0} - {1}. Not bought", pairCreatedEvent.Token0, pairCreatedEvent.Token0);
-                return false;
+                
+                results.Add(new RugCheckResult("CHECK_RUG_LIQUIDITY_PAIR", "LIQUIDITY_PAIR_NOT_FOUND", "Not bought", null, pairCreatedEvent.Symbol, false));
+                return results;
+                //return false;                            
             }
 
             var otherPairAddress = pairCreatedEvent.Token0.Equals(_sniperConfig.LiquidityPairAddress, StringComparison.InvariantCultureIgnoreCase) ?
@@ -207,14 +227,27 @@ namespace BscTokenSniper.Handlers
             var otherPairIdx = pairCreatedEvent.Token0.Equals(_sniperConfig.LiquidityPairAddress, StringComparison.InvariantCultureIgnoreCase) ?
                 1 : 0;
 
-            Task<bool>[] rugCheckerTasks = new Task<bool>[] {
+            Task<bool>[] rugCheckerTasks = new Task<bool>[] {          
+                RugdocCheck(otherPairAddress),
+                SafuCheck(otherPairAddress),
+                CheckContractVerified(otherPairAddress),
+                CheckMinLiquidity(pairCreatedEvent, otherPairAddress, otherPairIdx)                                              
+            };
+            await Task.WhenAll(rugCheckerTasks);
+
+            //return (rugCheckerTasks.All(t => t.IsCompletedSuccessfully && t.Result));
+            return results;
+                        
+            /*
+            Task<RugCheckResult>[] newRugCheckerTasks = new Task<RugCheckResult>[] {            
                 RugdocCheck(otherPairAddress),
                 SafuCheck(otherPairAddress),
                 CheckContractVerified(otherPairAddress),
                 CheckMinLiquidity(pairCreatedEvent, otherPairAddress, otherPairIdx)
             };
-            await Task.WhenAll(rugCheckerTasks);
-            return rugCheckerTasks.All(t => t.IsCompletedSuccessfully && t.Result);
+            await Task.WhenAll(newRugCheckerTasks);
+            return newRugCheckerTasks.All(results);            
+            */
         }
 
         private async Task<bool> CheckMinLiquidity(PairCreatedEvent pairCreatedEvent, string otherPairAddress, int otherPairIdx)
@@ -244,7 +277,10 @@ namespace BscTokenSniper.Handlers
                     _smartContractList.Add(sc);                          
                     SmartContractOperations.SaveContracts(_smartContractList);
 
+                    results.Add(new RugCheckResult("CHECK_MIN_LIQUIDITY", "INSUFFICIENT_LIQUIDITY", sc.Status, null, otherPairAddress, sc.Ok));
                     return false;
+                    //return new RugCheckResult("CHECK_MIN_LIQUIDITY", "INSUFFICIENT_LIQUIDITY", sc.Status, null, otherPairAddress, sc.Ok);
+
                 }
                 else
                 {
@@ -271,18 +307,43 @@ namespace BscTokenSniper.Handlers
                         _smartContractList.Add(sc);                    
                         SmartContractOperations.SaveContracts(_smartContractList);
 
+                        results.Add(new RugCheckResult("CHECK_MIN_LIQUIDITY", "TOKEN_CONTACT_RETURNING_INVALID_SUPPY", sc.Status, null, otherPairAddress, sc.Ok));
+                        //return new RugCheckResult("CHECK_MIN_LIQUIDITY", "TOKEN_CONTACT_RETURNING_INVALID_SUPPY", sc.Status, null, otherPairAddress, sc.Ok);
                         return false;
+                        
                     }
-                    totalAmount -= deadWalletBalance;
+
                     var percentageInPool = new Fraction(tokenAmountInPool).Divide(totalTokenAmount).Multiply(100);
+                    totalAmount -= deadWalletBalance;
                     result = ((decimal)percentageInPool) > _sniperConfig.MinimumPercentageOfTokenInLiquidityPool;
+
+                    sc.Ok = true;
+                    sc.Status = "Token: " + otherPairAddress + " Token Amount in Pool: " + tokenAmountInPool + " Total Supply: " + totalTokenAmount+ " Burned: " + deadWalletBalance.ToString()+" Total Percentage in pool: " + percentageInPool.ToDouble() + " Min Percentage Liquidity Check Status: " + result;                                                     
+                    
                     Serilog.Log.Logger.Information("CheckMinLiquidity: Token {0} Token Amount in Pool: {1} Total Supply: {2} Burned {3} Total Percentage in pool: {4}% Min Percentage Liquidity Check Status: {5}", otherPairAddress, tokenAmountInPool, totalTokenAmount, deadWalletBalance.ToString(), percentageInPool.ToDouble(), result);                
+            
+                    results.Add(new RugCheckResult("CHECK_MIN_LIQUIDITY", "MIN_PERCENTAGE_OF_TOKEN_IN_LIQUIDITY_POOL", sc.Status, null, otherPairAddress, sc.Ok));
+                    //return new RugCheckResult("CHECK_MIN_LIQUIDITY", "MIN_PERCENTAGE_OF_TOKEN_IN_LIQUIDITY_POOL", sc.Status, null, otherPairAddress, sc.Ok);
+                    return result;
+                    
                 }
-                return result;
+                else 
+                {                                        
+                    sc.Ok = false;
+                    sc.Status = "Token: " + otherPairAddress + ". Pool has insufficient liquidity";
+                    
+                    results.Add(new RugCheckResult("CHECK_MIN_LIQUIDITY", "INSUFFICIENT_PERCENTAGE_OF_TOKEN_IN_LIQUIDITY_POOL", sc.Status, null, otherPairAddress, sc.Ok));
+                    //return new RugCheckResult("CHECK_MIN_LIQUIDITY", "INSUFFICIENT_PERCENTAGE_OF_TOKEN_IN_LIQUIDITY_POOL", sc.Status, null, otherPairAddress, sc.Ok);
+                    return false;
+                    
+                }
+                                            
             }
             catch (Exception e) {
                 Serilog.Log.Logger.Error("CheckMinLiquidity: Error extracting information for {0} Error {1}", otherPairAddress, e.ToString());
-                return false;
+                
+                results.Add(new RugCheckResult("CHECK_MIN_LIQUIDITY", "EXCEPTION", "Error extracting information for " + otherPairAddress + e.ToString(), null, otherPairAddress, false));                //return new RugCheckResult("CHECK_MIN_LIQUIDITY", "EXCEPTION", "Error extracting information for " + otherPairAddress + e.ToString(), null, otherPairAddress, false);
+                return false;                
             }
 
         }
@@ -307,45 +368,58 @@ namespace BscTokenSniper.Handlers
                 sc.Ok = true;
                 sc.Status = "Bsc contract is ok! CheckContractVerified disabled";
                 _smartContractList.Add(sc);                
-                SmartContractOperations.SaveContracts(_smartContractList);                
+                SmartContractOperations.SaveContracts(_smartContractList);           
+
+                results.Add(new RugCheckResult("RUGDOC_CHECK_CHECK_CONTACT_VERIFIED", "NOT_ENABLED", "Not enabled", null, otherPairAddress, sc.Ok));
+                //return new RugCheckResult("RUGDOC_CHECK_CHECK_CONTACT_VERIFIED", "NOT_ENABLED", "Not enabled", null, otherPairAddress, sc.Ok);                
                 return true;
+                
             }
 
             if (innerResult["ABI"].Value<string>() == "Contract source code not verified")
             {
                 Serilog.Log.Logger.Warning("CheckContractVerified: Bsc contract is not verified for token {0}", otherPairAddress);
 
+                sc.Ok = false;
                 sc.Status = "Bsc contract is not verified for token";
-                _smartContractList.Add(sc);
-                //_smartContractList.Append<SmartContract>(sc);
+                _smartContractList.Add(sc);                
                 SmartContractOperations.SaveContracts(_smartContractList);                
             
-                return false;
+                results.Add(new RugCheckResult("RUGDOC_CHECK_CHECK_CONTACT_VERIFIED", "CONTRACT_NOT_VERIFIED", sc.Status, null, otherPairAddress, sc.Ok));
+                //return new RugCheckResult("RUGDOC_CHECK_CHECK_CONTACT_VERIFIED", "CONTRACT_NOT_VERIFIED", sc.Status, null, otherPairAddress, sc.Ok);
+                return false;                
             }
 
             if (_sniperConfig.CheckRouterAddressInContract)
             {
                 if (!srcCode.Contains(_sniperConfig.PancakeswapRouterAddress) && !srcCode.Contains(_sniperConfig.V1PancakeswapRouterAddress))
                 {
-                    Serilog.Log.Logger.Information("CheckContractVerified: Pancake swap router is invalid for token {0}. ", otherPairAddress);                
+                    Serilog.Log.Logger.Information("CheckContractVerified: Pancake swap router is invalid for token {0} ", otherPairAddress);                
                     
+                    sc.Ok = false;
                     sc.Status = "Pancake swap router is invalid for token";
-                    _smartContractList.Add(sc);
-                    //_smartContractList.Append<SmartContract>(sc);
+                    _smartContractList.Add(sc);                    
                     SmartContractOperations.SaveContracts(_smartContractList);
-                    return false;
+
+                    results.Add(new RugCheckResult("RUGDOC_CHECK_CHECK_CONTACT_VERIFIED", "PANCAKE_SWAP_ROUTER_INVALID", sc.Status, null, otherPairAddress, sc.Ok));
+                    //return new RugCheckResult("RUGDOC_CHECK_CHECK_CONTACT_VERIFIED", "PANCAKE_SWAP_ROUTER_INVALID", sc.Status, null, otherPairAddress, sc.Ok);
+                    return false;                    
                 }
             }
 
             var containsRugCheckStrings = _sniperConfig.ContractRugCheckStrings.FirstOrDefault(t => srcCode.Contains(t));
             if (!string.IsNullOrEmpty(containsRugCheckStrings))
             {
+                sc.Ok = false;
                 sc.Status = "Bsc contract does not contain RugCheckStrings";
                 _smartContractList.Add(sc);
                 //_smartContractList.Append<SmartContract>(sc);
                 SmartContractOperations.SaveContracts(_smartContractList);                
 
                 Serilog.Log.Logger.Warning("CheckContractVerified: Failed rug check for token {0}, contains string: {1}", otherPairAddress, containsRugCheckStrings);
+                
+                results.Add(new RugCheckResult("RUGDOC_CHECK_CHECK_CONTACT_VERIFIED", "CONTRACT_DOES_NOT_CONTAIN_RUGCHECK_STRINGS", sc.Status, null, otherPairAddress, sc.Ok));
+                //return new RugCheckResult("RUGDOC_CHECK_CHECK_CONTACT_VERIFIED", "CONTRACT_DOES_NOT_CONTAIN_RUGCHECK_STRINGS", sc.Status, null, otherPairAddress, sc.Ok);
                 return false;
             }
 
@@ -354,7 +428,10 @@ namespace BscTokenSniper.Handlers
             _smartContractList.Add(sc);
             SmartContractOperations.SaveContracts(_smartContractList);                
             
+            results.Add(new RugCheckResult("RUGDOC_CHECK_CHECK_CONTACT_VERIFIED", "CONTRACT_OK", sc.Status, null, otherPairAddress, sc.Ok));
+            //return new RugCheckResult("RUGDOC_CHECK_CHECK_CONTACT_VERIFIED", "CONTRACT_OK", sc.Status, null, otherPairAddress, sc.Ok);
             return true;
+            
         }
 
 

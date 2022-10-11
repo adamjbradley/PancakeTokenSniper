@@ -8,7 +8,7 @@ namespace BscTokenSniper.Handlers
     public class CoinAndLiquidityHandler
     {
         #region Liquidity Events
-        
+
         //
         // Liquidity Event
         // 
@@ -26,11 +26,12 @@ namespace BscTokenSniper.Handlers
                     LiquidityEvent le = new LiquidityEvent(longAmount, pairAddress, token0, token1);
 
                     TokenPair tp = this.GetTokenPairs(pairAddress);
-                    if (tp == null) {
+                    if (tp == null)
+                    {
                         Serilog.Log.Logger.Error("CoinAndLiquidityHandler: AddLiquidityEvent Token Pair not found! {0}", pairAddress);
                         throw new Exception("CoinAndLiquidityHandler: AddLiquidityEvent Token Pair not found");
                     }
-                    
+
                     if (tp.LiquidityEvents != null)
                         tp.LiquidityEvents.Add(le);
 
@@ -43,7 +44,7 @@ namespace BscTokenSniper.Handlers
             }
             catch (Exception e)
             {
-                Serilog.Log.Logger.Error(e, "CoinAndLiquidityHandler: " + nameof(AddLiquidityEvent));                
+                Serilog.Log.Logger.Error(e, "CoinAndLiquidityHandler: " + nameof(AddLiquidityEvent));
                 return false;
             }
         }
@@ -93,6 +94,37 @@ namespace BscTokenSniper.Handlers
         // TokenPairs
         // 
 
+        public TokenPair AddTokenPair(string address, string symbol, string token0, string token1)
+        {
+            Serilog.Log.Logger.Information("CoinAndLiquidityHandler: Entering AddTokenPair");
+            try
+            {
+                using (var db = new PersistenceContext())
+                {
+                    Serilog.Log.Logger.Information("CoinAndLiquidityHandler: AddTokenPair adding token pair {0} at address {1}", symbol, address);
+                    TokenPair tp = new TokenPair(address, symbol, token0, token1);
+                    db.Add(tp);
+                    db.SaveChanges();
+                    return tp;
+                }
+            }
+            catch (Exception e)
+            {
+                Serilog.Log.Logger.Error(e, nameof(AddTokenPair));
+                throw;
+            }
+        }
+        #endregion        
+
+        public bool TokenPairExists(string address)
+        {
+            Serilog.Log.Logger.Information("CoinAndLiquidityHandler: Entering TokenPairExists");
+            if (this.GetTokenPairs(address) != null)
+                return true;
+            else
+                return false;
+        }
+
         public TokenPair GetTokenPairs(string address)
         {
             Serilog.Log.Logger.Information("CoinAndLiquidityHandler: Entering GetLiquidityEvent");
@@ -100,15 +132,16 @@ namespace BscTokenSniper.Handlers
             {
                 using (var db = new PersistenceContext())
                 {
-                    var tp = db.TokenPairs                   
+                    var tp = db.TokenPairs
                         .Where(b => b.Address.Contains(address))
-                        .ToList<TokenPair>();                        
-                                            
+                        .ToList<TokenPair>();
+
                     if (tp != null)
                     {
                         if (tp.Count<TokenPair>() == 0)
                             return null;
-                        else {    
+                        else
+                        {
                             Serilog.Log.Logger.Information("CoinAndLiquidityHandler: GetTokenPairs found Token Pair {0}", address);
                             return tp.First<TokenPair>();
                         }
@@ -128,27 +161,19 @@ namespace BscTokenSniper.Handlers
 
         }
 
-        public bool TokenPairExists(string address)
+        public bool UpdateTokenPair(string address, TokenPair tokenPair)
         {
-            Serilog.Log.Logger.Information("CoinAndLiquidityHandler: Entering TokenPairExists");
-            if (this.GetTokenPairs(address) != null)
-                return true;
-            else
-                return false;
-        }
-
-        public TokenPair AddTokenPair(string address, string symbol, string token0, string token1)
-        {
-            Serilog.Log.Logger.Information("CoinAndLiquidityHandler: Entering AddTokenPair");
+            Serilog.Log.Logger.Information("CoinAndLiquidityHandler: Entering UpdateTokenPair");
+            
             try
-            {
+            {                
                 using (var db = new PersistenceContext())
                 {
-                    Serilog.Log.Logger.Information("CoinAndLiquidityHandler: AddTokenPair adding token pair {0} at address {1}", symbol, address);
-                    TokenPair tp = new TokenPair(address, symbol, token0, token1);                    
-                    db.Add(tp);
+                    Serilog.Log.Logger.Information("CoinAndLiquidityHandler: UpdateTokenPair adding token pair {0} at address {1}", tokenPair.Symbol, address);
+                    
+                    db.Update(tokenPair);
                     db.SaveChanges();
-                    return tp;
+                    return true;
                 }
             }
             catch (Exception e)
@@ -156,8 +181,9 @@ namespace BscTokenSniper.Handlers
                 Serilog.Log.Logger.Error(e, nameof(AddTokenPair));
                 throw;
             }
+
         }
-        #endregion        
+
 
     }
 }
