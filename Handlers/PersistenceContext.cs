@@ -2,6 +2,8 @@ using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using System.Numerics;
 using System;
+using Serilog;
+using System.Numerics;
 
 namespace BscTokenSniper.Handlers
 {
@@ -25,6 +27,15 @@ namespace BscTokenSniper.Handlers
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
             => optionsBuilder.UseNpgsql("Host=192.168.1.120;Database=iiprod_db;Username=postgres;Password=1password2");
+
+        //Handle concurrency for TokenPairs
+        //From : https://www.npgsql.org/efcore/modeling/concurrency.html
+        //and https://stackoverflow.com/questions/60801649/ef-core-postgres-dbupdateconcurrencyexception-when-updating-detached-data
+        // add public uint xmin {get; set;}
+
+        //protected override void OnModelCreating(ModelBuilder modelBuilder)
+        //    => modelBuilder.Entity<TokenPair>()
+         //          .UseXminAsConcurrencyToken();
     }
 
     [Index(nameof(Address))]
@@ -32,25 +43,28 @@ namespace BscTokenSniper.Handlers
     {
         public int TokenPairId { get; set; }
         public DateTime Timestamp { get; set;}
-
         public string Address { get; set; }
         public string Symbol { get; set; }
         public string Token0 {get; set; }
         public string Token1 {get; set; }
+        public string State { get; set; }        
         public bool Owned { get; set; }
         public bool ToTrade { get; set; }
-        public string State { get; set; }        
-
-        public TokenPair(string address, string symbol, string token0, string token1) {
+        //public uint xmin {get; set;}
+        
+        public TokenPair(string address, string symbol, string token0, string token1, string state = "CREATED", bool owned = false, bool toTrade = false) {
             this.Address = address;
             this.Symbol = symbol;
             this.Token0 = token0;
             this.Token1 = token1;
+            this.Owned = owned;
+            this.ToTrade = toTrade;
+            this.State = state;
             this.Timestamp = DateTime.UtcNow;
         }        
 
         public List<LiquidityEvent> LiquidityEvents { get; } = new();
-        public List<TokenEvent> TokenPairEvents { get; } = new();        
+        public List<TokenEvent> TokenPairEvents { get; } = new();    
     }
 
     [Index(nameof(PairAddress)), Index(nameof(EventId))]
@@ -69,14 +83,28 @@ namespace BscTokenSniper.Handlers
 
         public string Token1 {get; set;}
 
+        //public uint xmin {get; set;}
+
         public LiquidityEvent(string amount, string pairAddress, string token0, string token1) {
+            
             this.Amount = amount;
             this.PairAddress = pairAddress;
             this.Token0 = token0;
-            this.Token1 = token1;
-            this.EventId = Guid.NewGuid().ToString();
+            this.Token1 = token1;            
             this.Timestamp = DateTime.UtcNow;
             this.EventId = Guid.NewGuid().ToString();
+
+            /*
+            long longAmount;
+            if (long.TryParse(amount, out resultAmount)) {
+                this.Amount = resultAmount;
+            }
+            else {
+                this.Amount = -1;
+                Serilog.Log.Logger.Error("PersistenceContext: LiquidityEvent error converting BigInt(string) to long. Original amount {0} and EventId {1} ", amount, this.EventId);
+            }
+            */
+
         }
 
         public int TokenPairId { get; set; }
@@ -102,6 +130,8 @@ namespace BscTokenSniper.Handlers
         public long FiftyTwoWeekLow { get; set; }        
         public int TokenPairId { get; set; }
         public TokenPair TokenPair { get; set; }
+
+        //public uint xmin {get; set;}
     }
 
     [Index(nameof(Address)), Index(nameof(EventId))]
@@ -128,7 +158,9 @@ namespace BscTokenSniper.Handlers
         public long BuyQuantity { get; set; }
 
         public string Wallet { get; set; }        
-        public string WalletAddress { get; set; }        
+        public string WalletAddress { get; set; }      
+
+        //public uint xmin {get; set;}  
 
         public TokenEvent(string address, string eventType, string eventResult, string description, bool success, string symbol) {
             this.Address = address;   

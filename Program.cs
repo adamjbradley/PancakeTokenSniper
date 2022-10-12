@@ -42,7 +42,7 @@ namespace BscTokenSniper
             //services.AddScoped<IImplementation, NewImplementation>();
 
             // From https://learn.microsoft.com/en-us/ef/core/get-started/overview/first-app?tabs=netcore-cli
-            services.AddDbContext<PersistenceContext>(options => options.UseNpgsql("Host=192.168.1.120;Database=iiprod_db;Username=postgres;Password=postgres"));            
+            services.AddDbContext<PersistenceContext>(options => options.UseNpgsql("Host=192.168.1.120;Database=iiprod_db;Username=postgres;Password=postgres"));
         });
 
     }

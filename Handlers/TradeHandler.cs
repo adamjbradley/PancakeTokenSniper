@@ -31,11 +31,11 @@ namespace BscTokenSniper.Handlers
         private ConcurrentDictionary<String, TokensOwned> _soldTokenList = new ConcurrentDictionary<String,TokensOwned>();
         private ConcurrentDictionary<String, TokensOwned> _goodTokenList = new ConcurrentDictionary<String,TokensOwned>();
         private ConcurrentDictionary<String, TokensOwned> _tokenList = new ConcurrentDictionary<String,TokensOwned>();
+        private CoinAndLiquidityHandler _coinAndLiquidityHandler = new CoinAndLiquidityHandler();
 
         public TradeHandler(IOptions<SniperConfiguration> options, RugHandler rugChecker)
         {
-            _sniperConfig = options.Value;
-            //_bscWeb3 = new Web3(url: _sniperConfig.BscHttpApi, account: new Account(_sniperConfig.WalletPrivateKey, new BigInteger(_sniperConfig.ChainId)));
+            _sniperConfig = options.Value;            
             _bscWeb3 = new Web3(url: _sniperConfig.BscHttpApi, account: new Account(_sniperConfig.WalletPrivateKey, new BigInteger(_sniperConfig.ChainId)));
             _bscWeb3.TransactionManager.UseLegacyAsDefault = true;
             _erc20Abi = File.ReadAllText("./Abis/Erc20.json");
@@ -77,7 +77,8 @@ namespace BscTokenSniper.Handlers
                     });
 
                     //AJB                    
-                    MyTokensOwned.SaveTokens(_goodTokenList, "goodtokens.json");
+                    MyTokensOwned.SaveTokens(_goodTokenList, "goodtokens.json");                    
+                    CoinAndLiquidityHandler.UpdateTokenPair(tokenAddress, new TokenEvent(tokenAddress, "BUY_TOKEN", "BUYING", "Buying: " + symbol + " Amount: " + amt.ToString(), true, symbol));
                 }
 
                 if (_sniperConfig.BuyDelaySeconds > 0)
@@ -98,6 +99,8 @@ namespace BscTokenSniper.Handlers
                     TokenIdx = tokenIdx
                 }, amount);
                 Log.Logger.Information("Buy: [BUY] TX ID: {buyReturnValue} Reciept: {@reciept}", buyReturnValue, reciept);
+
+
 
                 var swapEventList = reciept.DecodeAllEvents<SwapEvent>().Where(t => t.Event != null)
                     .Select(t => t.Event).ToList();
@@ -126,6 +129,8 @@ namespace BscTokenSniper.Handlers
 
                     //AJB                    
                     MyTokensOwned.SaveTokens(_ownedTokenList, "ownedtokens.json");
+                    CoinAndLiquidityHandler.UpdateTokenPair(tokenAddress, new TokenPair(tokenAddress, symbol, tokenAddress, null, "BOUGHT", true, false));
+                    CoinAndLiquidityHandler.UpdateTokenPair(tokenAddress, new TokenEvent(tokenAddress, "BUY_TOKEN", "BOUGHT", "Bought: " + symbol, true, symbol));                    
                         
                     return true;
                 }
@@ -133,6 +138,7 @@ namespace BscTokenSniper.Handlers
             }
             catch (Exception e)
             {
+                CoinAndLiquidityHandler.UpdateTokenPair(tokenAddress, new TokenEvent(tokenAddress, "BUY_TOKEN", "BUY_ERROR", "Error buying: " + symbol, true, symbol));                    
                 Log.Logger.Error("Buy: Error buying", e);
                 return false;
             }
@@ -256,7 +262,6 @@ namespace BscTokenSniper.Handlers
 
             return MyTokensOwned.SaveTokens(this._tokenList, "tokens.json");
         }
-
         
         public async Task<bool> Approve(string tokenAddress)
         {
@@ -278,10 +283,12 @@ namespace BscTokenSniper.Handlers
             return true;
         }
 
-        public async Task<bool> Sell(string tokenAddress, BigInteger amount, BigInteger outAmount, double slippage, string symbol)
+        public async Task<bool> Sell(string tokenAddress, BigInteger amount, BigInteger outAmount, double slippage, string symbol, string otherPairAddress)
         {
             try
             {
+                CoinAndLiquidityHandler.UpdateTokenPair(tokenAddress, new TokenEvent(tokenAddress, "SELL_TOKEN", "SELLING", "Selling " + outAmount.ToString(), true, symbol));
+                
                 var sellFunction = _pancakeContract.GetFunction<SwapExactTokensForETHSupportingFeeOnTransferTokensFunction>();
 
                 var gas = new HexBigInteger(_sniperConfig.GasAmount);
@@ -297,6 +304,9 @@ namespace BscTokenSniper.Handlers
                 }, _sniperConfig.WalletAddress, gas, new HexBigInteger(BigInteger.Zero));
                 var reciept = await _bscWeb3.TransactionManager.TransactionReceiptService.PollForReceiptAsync(txId, new CancellationTokenSource(TimeSpan.FromMinutes(2)));
                 Log.Logger.Information("Sell: [SELL] TX ID: {txId} Reciept: {@reciept}", txId, reciept);
+
+                CoinAndLiquidityHandler.UpdateTokenPair(tokenAddress, new TokenEvent(tokenAddress, "SELL_TOKEN", "SOLD", "Sold " + symbol, true, symbol));
+            
 
                 var swapEventList = reciept.DecodeAllEvents<SwapEvent>().Where(t => t.Event != null)
                     .Select(t => t.Event).ToList();
@@ -374,7 +384,9 @@ namespace BscTokenSniper.Handlers
                     {
                         try
                         {
-                            ownedToken.FailedSell = !Sell(ownedToken.Address, ownedToken.Amount - 1, GetMarketPrice(ownedToken, ownedToken.Amount - 1).Result, _sniperConfig.SellSlippage, ownedToken.Symbol).Result;
+                            //AJB
+                            //TODO Need to fix this null! Better to copy at the other end... so nulls are ignore, but booleans hmm...
+                            ownedToken.FailedSell = !Sell(ownedToken.Address, ownedToken.Amount - 1, GetMarketPrice(ownedToken, ownedToken.Amount - 1).Result, _sniperConfig.SellSlippage, ownedToken.Symbol, null).Result;
                         } catch(Exception e)
                         {
                             Log.Logger.Error(nameof(MonitorPrices), e);

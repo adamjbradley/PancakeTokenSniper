@@ -37,7 +37,7 @@ namespace BscTokenSniper.Handlers
         public async Task Add(string t)
         {
             var transaction = await GetTransactionAsync(t);
-            if (transaction != null && (transaction.To == _sniperConfig.V1PancakeswapRouterAddress || transaction.To == _sniperConfig.PancakeswapRouterAddress))
+            if (transaction != null && (String.Equals(transaction.To, _sniperConfig.V1PancakeswapRouterAddress, StringComparison.OrdinalIgnoreCase) || (String.Equals(transaction.To, _sniperConfig.PancakeswapRouterAddress, StringComparison.OrdinalIgnoreCase))))
             {
                 var isRemoveLiquidity = transaction.IsTransactionForFunctionMessage<RemoveLiquidityWithPermitFunction>();
                 if (isRemoveLiquidity)
