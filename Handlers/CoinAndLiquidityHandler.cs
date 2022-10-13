@@ -58,6 +58,7 @@ namespace BscTokenSniper.Handlers
                     db.SaveChanges();
 
                     Serilog.Log.Logger.Information("AddLiquidityEvent: CoinAndLiquidityHandler successfully persisted event for {0} : {1}", address, amount);
+                    Serilog.Log.Logger.Information("CoinAndLiquidityHandler: Leaving AddLiquidityEvent");
                     return true;
                 }
                 catch (DbUpdateConcurrencyException ex)
@@ -123,10 +124,10 @@ namespace BscTokenSniper.Handlers
                     Serilog.Log.Logger.Error(e, "CoinAndLiquidityHandler: " + nameof(AddLiquidityEvent));
                     throw;
                 }
-            }
-
-            Serilog.Log.Logger.Information("CoinAndLiquidityHandler: Leaving AddLiquidityEvent");
-
+                finally {
+                    Serilog.Log.Logger.Information("CoinAndLiquidityHandler: Leaving AddLiquidityEvent");
+                }
+            }            
         }
 
         public bool GetLiquidityEvent(string address)
@@ -157,8 +158,9 @@ namespace BscTokenSniper.Handlers
                     Serilog.Log.Logger.Error(e, nameof(GetLiquidityEvent));
                     throw;
                 }
-
-                Serilog.Log.Logger.Information("CoinAndLiquidityHandler: Leaving GetLiquidityEvent");
+                finally {
+                    Serilog.Log.Logger.Information("CoinAndLiquidityHandler: Leaving GetLiquidityEvent");
+                }                
             }
         }
 
@@ -197,16 +199,19 @@ namespace BscTokenSniper.Handlers
                 Serilog.Log.Logger.Error(e, nameof(AddTokenPair));
                 throw;
             }
-
-            Serilog.Log.Logger.Information("CoinAndLiquidityHandler: Leaving AddTokenPair");
+            finally {
+                Serilog.Log.Logger.Information("CoinAndLiquidityHandler: Leaving AddTokenPair");
+            }        
         }
         #endregion
 
         public static bool TokenPairExists(string address)
         {
             Serilog.Log.Logger.Information("CoinAndLiquidityHandler: Entering TokenPairExists");
-            if (GetTokenPairs(address) != null)
+            if (GetTokenPairs(address) != null) {
+                Serilog.Log.Logger.Information("CoinAndLiquidityHandler: Leaving TokenPairExists");
                 return true;
+            }                
             else
             {
                 Serilog.Log.Logger.Information("CoinAndLiquidityHandler: Leaving TokenPairExists");
@@ -248,8 +253,9 @@ namespace BscTokenSniper.Handlers
                 Serilog.Log.Logger.Error(e, nameof(GetLiquidityEvent));
                 throw;
             }
-
-            Serilog.Log.Logger.Information("CoinAndLiquidityHandler: Leaving GetLiquidityEvent");
+            finally {
+                Serilog.Log.Logger.Information("CoinAndLiquidityHandler: Leaving GetLiquidityEvent");
+            }
         }
 
         public static bool AddTokenPairEvent(string address, TokenEvent tokenEvent)
@@ -336,9 +342,9 @@ namespace BscTokenSniper.Handlers
                 Serilog.Log.Logger.Error(e, nameof(AddTokenPair));
                 throw;
             }
-
-            Serilog.Log.Logger.Information("CoinAndLiquidityHandler: Leaving UpdateTokenPair");
-
+            finally {
+                Serilog.Log.Logger.Information("CoinAndLiquidityHandler: Leaving UpdateTokenPair");
+            }
         }
         public static bool UpdateTokenPair(string address, LiquidityEvent liquidityEvent)
         {
@@ -395,9 +401,10 @@ namespace BscTokenSniper.Handlers
                     Serilog.Log.Logger.Error(e, nameof(AddTokenPair));
                     throw;
                 }
-            }
-
-            Serilog.Log.Logger.Information("CoinAndLiquidityHandler: Leaving UpdateTokenPair - Liquidity Event");
+                finally {
+                    Serilog.Log.Logger.Information("CoinAndLiquidityHandler: Leaving UpdateTokenPair - Liquidity Event");
+                }
+            }        
         }
         public static bool UpdateTokenPair(string address, TokenEvent tokenEvent)
         {
@@ -455,9 +462,9 @@ namespace BscTokenSniper.Handlers
                 Serilog.Log.Logger.Error(e, nameof(AddTokenPair));
                 throw;
             }
-
-            Serilog.Log.Logger.Information("CoinAndLiquidityHandler: Leaving UpdateTokenPair - TokenEvent");
-
+            finally {
+                Serilog.Log.Logger.Information("CoinAndLiquidityHandler: Leaving UpdateTokenPair - TokenEvent");
+            }    
         }
     }
 }
