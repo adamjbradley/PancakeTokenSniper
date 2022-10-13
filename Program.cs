@@ -12,6 +12,8 @@ using Microsoft.EntityFrameworkCore;
 using Npgsql.EntityFrameworkCore.PostgreSQL;
 using System.Configuration;
 
+using System.ServiceModel;
+
 namespace BscTokenSniper
 {
     public static class Program
@@ -22,10 +24,10 @@ namespace BscTokenSniper
         }
 
         public static IHostBuilder CreateHostBuilder(string[] args) => Host.CreateDefaultBuilder(args)
-        .ConfigureServices((hostContext, services) =>
+        .UseConsoleLifetime().ConfigureServices((hostContext, services) =>
         {
             var config = hostContext.Configuration;
-            
+                        
             var loggerConfig = new LoggerConfiguration()
                   .ReadFrom.Configuration(config);
 
